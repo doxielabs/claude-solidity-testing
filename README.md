@@ -1,6 +1,8 @@
-# Claude Solidity Skills Plugin
+# Claude Solidity Testing Plugin
 
 A Claude Code plugin providing production-grade skills for Solidity development. Each skill encodes battle-tested methodology from the best public resources in the ecosystem.
+
+> Forked from [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills) by Max Taylor. This is an opinionated variant maintained by doxielabs; credit for the original design and skill content goes to the upstream author.
 
 ## Installation
 
@@ -8,28 +10,28 @@ A Claude Code plugin providing production-grade skills for Solidity development.
 
 ```bash
 # Add marketplace
-/plugin marketplace add max-taylor/Claude-Solidity-Skills
+/plugin marketplace add doxielabs/claude-solidity-testing
 
 # Install plugin
-/plugin install solidity-skills@Claude-Solidity-Skills
+/plugin install solidity-testing-skills@claude-solidity-testing
 ```
 
 Or via CLI:
 
 ```bash
-claude plugin marketplace add max-taylor/Claude-Solidity-Skills
-claude plugin install solidity-skills@Claude-Solidity-Skills
+claude plugin marketplace add doxielabs/claude-solidity-testing
+claude plugin install solidity-testing-skills@claude-solidity-testing
 ```
 
 ### Local (for development)
 
 ```bash
-claude --plugin-dir ./solidity-skills
+claude --plugin-dir ./solidity-testing-skills
 ```
 
 ## Skills
 
-### `/solidity-skills:test-hardhat` — Hardhat Test Generation
+### `/solidity-testing-skills:test-hardhat` — Hardhat Test Generation
 
 Generates comprehensive Hardhat v3 test suites with structured coverage across unit, integration, and end-to-end testing layers.
 
@@ -43,7 +45,7 @@ Generates comprehensive Hardhat v3 test suites with structured coverage across u
 **Invoke:**
 
 ```
-/solidity-skills:test-hardhat MyContract.sol
+/solidity-testing-skills:test-hardhat MyContract.sol
 ```
 
 **Resources used to build this skill:**
@@ -55,7 +57,7 @@ Generates comprehensive Hardhat v3 test suites with structured coverage across u
 
 ---
 
-### `/solidity-skills:test-foundry` — Foundry/Forge Test Generation
+### `/solidity-testing-skills:test-foundry` — Foundry/Forge Test Generation
 
 Generates comprehensive Forge test suites with first-class support for fuzz testing, invariant testing, and fork testing.
 
@@ -70,7 +72,7 @@ Generates comprehensive Forge test suites with first-class support for fuzz test
 **Invoke:**
 
 ```
-/solidity-skills:test-foundry MyContract.sol
+/solidity-testing-skills:test-foundry MyContract.sol
 ```
 
 **Resources used to build this skill:**
@@ -85,7 +87,7 @@ Generates comprehensive Forge test suites with first-class support for fuzz test
 
 ---
 
-### `/solidity-skills:gas-optimize` — Gas Optimization Analysis
+### `/solidity-testing-skills:gas-optimize` — Gas Optimization Analysis
 
 Analyzes a Solidity contract for gas optimization opportunities, ranked by impact with before/after code and estimated gas savings.
 
@@ -99,7 +101,7 @@ Analyzes a Solidity contract for gas optimization opportunities, ranked by impac
 **Invoke:**
 
 ```
-/solidity-skills:gas-optimize MyContract.sol
+/solidity-testing-skills:gas-optimize MyContract.sol
 ```
 
 **Resources used to build this skill:**
@@ -111,7 +113,7 @@ Analyzes a Solidity contract for gas optimization opportunities, ranked by impac
 
 ---
 
-### `/solidity-skills:audit` — Security Audit
+### `/solidity-testing-skills:audit` — Security Audit
 
 Performs a systematic, checklist-driven security audit with SWC vulnerability classification and weird ERC20 edge case analysis.
 
@@ -126,7 +128,7 @@ Performs a systematic, checklist-driven security audit with SWC vulnerability cl
 **Invoke:**
 
 ```
-/solidity-skills:audit MyContract.sol
+/solidity-testing-skills:audit MyContract.sol
 ```
 
 **Resources used to build this skill:**
@@ -141,8 +143,9 @@ Performs a systematic, checklist-driven security audit with SWC vulnerability cl
 ## Plugin Structure
 
 ```
-solidity-skills/
+claude-solidity-testing/
 ├── .claude-plugin/
+│   ├── marketplace.json
 │   └── plugin.json
 ├── skills/
 │   ├── test-hardhat/
@@ -159,3 +162,7 @@ solidity-skills/
 ## Contributing
 
 To add a new skill, create a directory under `skills/` with a `SKILL.md` file. See existing skills for the frontmatter format and methodology structure.
+
+## Acknowledgements
+
+This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This fork rebrands and extends the skill set for doxielabs' internal testing workflows.

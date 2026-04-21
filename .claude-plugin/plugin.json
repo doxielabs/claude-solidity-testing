@@ -1,13 +1,13 @@
 {
-  "name": "solidity-skills",
-  "version": "0.2.1",
+  "name": "solidity-testing-skills",
+  "version": "0.1.0",
   "description": "Production-grade Solidity skills for Claude Code — testing (Hardhat + Foundry), gas optimization, and security auditing.",
   "author": {
-    "name": "max-taylor",
-    "url": "https://github.com/max-taylor"
+    "name": "doxielabs",
+    "url": "https://github.com/doxielabs"
   },
-  "homepage": "https://github.com/max-taylor/Claude-Solidity-Skills",
-  "repository": "https://github.com/max-taylor/Claude-Solidity-Skills",
+  "homepage": "https://github.com/doxielabs/claude-solidity-testing",
+  "repository": "https://github.com/doxielabs/claude-solidity-testing",
   "license": "MIT",
   "keywords": [
     "claude-code",

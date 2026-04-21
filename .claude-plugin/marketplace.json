@@ -1,21 +1,21 @@
 {
-  "name": "Claude-Solidity-Skills",
+  "name": "claude-solidity-testing",
   "owner": {
-    "name": "max-taylor"
+    "name": "doxielabs"
   },
   "metadata": {
-    "description": "Production-grade Solidity skills for Claude Code"
+    "description": "Production-grade Solidity testing skills for Claude Code"
   },
   "plugins": [
     {
-      "name": "solidity-skills",
+      "name": "solidity-testing-skills",
       "source": "./",
-      "description": "Testing (Hardhat + Foundry), gas optimization, and security auditing skills for Solidity development. Built from 20+ industry resources.",
+      "description": "Testing (Hardhat + Foundry), gas optimization, and security auditing skills for Solidity development. Opinionated version; inspired on https://github.com/max-taylor/Claude-Solidity-Skills.",
       "author": {
-        "name": "max-taylor"
+        "name": "doxielabs"
       },
-      "homepage": "https://github.com/max-taylor/Claude-Solidity-Skills",
-      "repository": "https://github.com/max-taylor/Claude-Solidity-Skills",
+      "homepage": "https://github.com/doxielabs/claude-solidity-testing",
+      "repository": "https://github.com/doxielabs/claude-solidity-testing",
       "license": "MIT",
       "keywords": [
         "solidity",
