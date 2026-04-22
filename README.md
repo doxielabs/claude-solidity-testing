@@ -57,33 +57,62 @@ Generates comprehensive Hardhat v3 test suites with structured coverage across u
 
 ---
 
-### `/solidity-testing-skills:test-foundry` — Foundry/Forge Test Generation
+### `/solidity-testing-skills:unit-test-foundry` — Foundry/Forge Unit & Fuzz Test Generation
 
-Generates comprehensive Forge test suites with first-class support for fuzz testing, invariant testing, and fork testing.
+Generates comprehensive Forge unit and fuzz test suites for a Solidity contract or a single function.
 
 **What it does:**
 
-- Reads and analyzes the target contract's full interface
-- Produces a test plan covering unit tests, fuzz tests, invariant tests with handler contracts, and fork tests
-- Writes Solidity tests using forge-std's `Test` base, cheatcodes (`vm.prank`, `vm.expectRevert`, `vm.expectEmit`, `vm.warp`, `deal`, etc.), and `bound()` for input constraining
-- Generates handler contracts for invariant testing with ghost variables and multi-actor simulation
-- Outputs a coverage summary including fuzz and invariant coverage
+- Reads and analyzes the target contract's full interface (functions, modifiers, events, errors, state)
+- Produces a test plan covering deployment, per-function revert cases (access control, input validation), happy paths with state and event assertions, and edge cases (zero, max uint, boundaries)
+- Writes Solidity tests using forge-std's `Test` base, cheatcodes (`vm.prank`, `vm.expectRevert`, `vm.expectEmit`, `vm.warp`, `deal`, etc.), and a shared `BaseTest` for setup reuse
+- Emits a `testFuzz_` variant for every function with numeric or address inputs, using `bound()` to constrain ranges
+- Outputs a coverage summary mapping tests to every modifier, require/revert, event, and edge case
 
 **Invoke:**
 
 ```
-/solidity-testing-skills:test-foundry MyContract.sol
+/solidity-testing-skills:unit-test-foundry MyContract.sol
+```
+
+Supports a filename, a function name, or `File.sol#LineNumber` to scope the tests to a single function.
+
+**Resources used to build this skill:**
+
+- [Foundry Book — Writing Tests](https://book.getfoundry.sh/forge/writing-tests) — Test structure, `setUp()`, naming conventions (`test_`, `testFuzz_`), assertion library, verbosity flags
+- [Foundry Book — Cheatcodes Overview](https://book.getfoundry.sh/forge/cheatcodes) — Full `vm.*` cheatcode reference (prank, expectRevert, expectEmit, warp, roll, deal, store, mockCall, etc.)
+- [Moloch DAO Test README](https://github.com/MolochVentures/moloch/blob/master/test/README.md) — Verification helper pattern, per-require coverage discipline, state machine testing
+- [Smart Contract Security Field Guide — Testing](https://scsfg.io/developers/testing/) — Test planning hierarchy, fuzz testing philosophy
+- [Ethereum.org — Smart Contract Testing](https://ethereum.org/developers/docs/smart-contracts/testing/) — Testing taxonomy and property-based testing methodology
+
+---
+
+### `/solidity-testing-skills:invariant-test-foundry` — Foundry/Forge Invariant Test Generation
+
+Generates a handler-driven Forge invariant test suite for one or more Solidity contracts, driven by a user-supplied list of invariants.
+
+**What it does:**
+
+- Takes a tuple of target contract files and a path to an invariants file (markdown/text) listing the properties that must hold
+- Reads the contracts and the invariants file, maps out actors, ghost state, and the handler surface required to exercise every invariant
+- Generates a `HandlerBase` (actor scaffolding, `useActor` modifier) and a `BaseTest` (deploys tokens, dependencies, approvals) — or reuses existing ones
+- Writes a handler contract with `bound()`-constrained inputs, ghost variables, and per-selector call counters
+- Writes the invariant test contract with every listed invariant plus any implied conservation / monotonicity / solvency properties
+- Outputs a coverage summary tying each invariant back to its entry in the invariants file, plus a handler-action exercise count
+
+**Invoke:**
+
+```
+/solidity-testing-skills:invariant-test-foundry [Vault.sol, Router.sol] invariants.md
 ```
 
 **Resources used to build this skill:**
 
-- [Foundry Book — Writing Tests](https://book.getfoundry.sh/forge/writing-tests) — Test structure, `setUp()`, naming conventions (`test_`, `testFuzz_`, `invariant_`), assertion library, verbosity flags
-- [Foundry Book — Cheatcodes Overview](https://book.getfoundry.sh/forge/cheatcodes) — Full `vm.*` cheatcode reference (prank, expectRevert, expectEmit, warp, roll, deal, store, mockCall, etc.)
 - [Foundry Book — Invariant Testing Guide](https://book.getfoundry.sh/guides/invariant-testing) — Handler pattern, ghost variables, `targetContract`, `targetSelector`, `bound()` vs `vm.assume()`, multi-actor simulation, configuration
 - [Foundry Book — Fork Testing Guide](https://book.getfoundry.sh/guides/fork-testing) — `vm.createFork`, `vm.selectFork`, block pinning, `deal()` for ERC20s, RPC caching
-- [Moloch DAO Test README](https://github.com/MolochVentures/moloch/blob/master/test/README.md) — Verification helper pattern, per-require coverage discipline, state machine testing
-- [Smart Contract Security Field Guide — Testing](https://scsfg.io/developers/testing/) — Test planning hierarchy, fuzz testing philosophy, invariant property identification
-- [Ethereum.org — Smart Contract Testing](https://ethereum.org/developers/docs/smart-contracts/testing/) — Testing taxonomy and property-based testing methodology
+- [Foundry Book — Cheatcodes Overview](https://book.getfoundry.sh/forge/cheatcodes) — `vm.prank`, `vm.deal`, `vm.mockCall`, `bound()` and the `useActor` building blocks
+- [Moloch DAO Test README](https://github.com/MolochVentures/moloch/blob/master/test/README.md) — State-machine invariants and per-require coverage discipline
+- [Smart Contract Security Field Guide — Testing](https://scsfg.io/developers/testing/) — Invariant property identification
 
 ---
 
@@ -149,13 +178,17 @@ claude-solidity-testing/
 │   └── plugin.json
 ├── skills/
 │   ├── test-hardhat/
-│   │   └── SKILL.md            # Hardhat test generation
-│   ├── test-foundry/
-│   │   └── SKILL.md            # Foundry test generation
+│   │   └── SKILL.md                       # Hardhat test generation
+│   ├── unit-test-foundry/
+│   │   └── SKILL.md                       # Foundry unit + fuzz test generation
+│   ├── invariant-test-foundry/
+│   │   ├── SKILL.md                       # Foundry invariant test generation
+│   │   └── references/
+│   │       └── invariant-testing.md       # Handler pattern, ghost vars, targeting
 │   ├── gas-optimize/
-│   │   └── SKILL.md            # Gas optimization analysis
+│   │   └── SKILL.md                       # Gas optimization analysis
 │   └── audit/
-│       └── SKILL.md            # Security audit
+│       └── SKILL.md                       # Security audit
 └── README.md
 ```
 
@@ -165,4 +198,4 @@ To add a new skill, create a directory under `skills/` with a `SKILL.md` file. S
 
 ## Acknowledgements
 
-This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This fork rebrands and extends the skill set for doxielabs' internal testing workflows.
+This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This is an opinionated fork that adjust the testing workflow.

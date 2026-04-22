@@ -1,6 +1,6 @@
 ---
 name: unit-test-foundry
-description: Generate a comprehensive Foundry/Forge test suite for a Solidity contract. Produces structured, high-coverage tests with fuzz testing following battle-tested methodology.
+description: Generate a comprehensive Foundry/Forge unit and fuzz test suite for a Solidity contract. Produces structured, high-coverage tests following battle-tested methodology.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
 argument-hint: <ContractName.sol | functionName | ContractName.sol#42>
 ---
@@ -85,10 +85,6 @@ For **each** external/public function create a test group containing tests in **
 test/
 ├── ContractName.t.sol          # Unit + happy/sad path tests
 ├── ContractName.fuzz.t.sol     # Fuzz tests (if complex enough to separate)
-├── ContractName.invariant.t.sol # Invariant tests with handler (out of scope for this skill)
-├── ContractName.fork.t.sol     # Fork tests (out of scope for this skill)
-├── handlers/
-│   └── ContractNameHandler.sol # Invariant test handler (out of scope for this skill)
 └── utils/
     └── BaseTest.sol            # Base layer with common setup (users, tokens, etc)
 ```
@@ -320,8 +316,8 @@ function test_Deposit_EmitsEvent() public {}
 function test_Deposit_ZeroValue() public {}
 function test_Deposit_MaxUint() public {}
 
-// Fuzz tests: testFuzz_FunctionName_Description__Fuzz
-function testFuzz_Deposit_AnyValidAmount__Fuzz(uint256 amount) public {}
+// Fuzz tests: testFuzz_FunctionName_Description
+function testFuzz_Deposit_AnyValidAmount(uint256 amount) public {}
 
 ```
 
