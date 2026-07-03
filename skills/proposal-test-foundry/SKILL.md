@@ -206,7 +206,13 @@ function setUp() public {
 }
 ```
 
-**Prefer the real path over `deal()` when the point is to validate a configuration.** If a step's correctness *is* that some capacity/bucket was sized right, exercise the genuine mechanism (e.g. simulate CCIP delivery via `releaseOrMint` from the registered OffRamp) so a misconfiguration reverts loudly. Use `deal()` only when you specifically want a "no funds / wrong state" scenario — and say so in a comment.
+**Prefer the real path over `deal()` when the point is to validate a configuration.** If a step's correctness *is* that some capacity/bucket was sized right, exercise the genuine mechanism (e.g. simulate a cross-chain delivery by calling the mint entry point from the registered bridge endpoint) so a misconfiguration reverts loudly. Use `deal()` only when you specifically want a "no funds / wrong state" scenario — and say so in a comment.
+
+**When the proposal depends on something that happens outside the proposal, mock as little as possible.** Many proposals assume a prior off-proposal interaction has occurred: funds bridged from another chain, a cross-chain message delivered, a separate governance action executed. Reproduce that prerequisite through its *real* mechanism rather than short-circuiting to the end state, so the test exercises the same code path — and the same configuration the payload just set — that production will.
+
+Worked through with a cross-chain example: suppose a payload assumes some amount of a token was bridged in from another chain before it runs. The lazy setup is to `deal()` that balance straight onto the destination address — but that skips the entire arrival path on this chain: the token pool, the rate limiter, the bucket/capacity the proposal configured. Those are exactly the things that can be misconfigured. Instead, simulate the genuine delivery: invoke the real mint/release entry point from the registered bridge endpoint, mirroring how the funds actually arrive. A wrong capacity or a missing lane then reverts loudly during setup instead of passing against a faked balance.
+
+The rule of thumb: every byte you fake is a byte you don't test. Fake only the *trigger* you genuinely cannot reproduce on a fork (an external actor's signed call, a future block), and reach the desired state through the real contracts for everything downstream of it.
 
 **Gate not-yet-deployed addresses with `vm.skip`.** Proposals are often written before the target contracts are deployed, leaving `address(0)` placeholders. Keep tests compiling and ready with a single guard helper:
 ```solidity
@@ -285,5 +291,6 @@ Verifiable from the test work:
 - **One `.t.sol` per `.sol`; keep the generated `setUp` + `test_defaultProposalExecution`.** No `BaseTest`, no constructor tests, no fuzz tests.
 - **Order tests to match `execute()`** and group them with section banners mirroring the payload.
 - **Mirror real sequencing**; prefer the genuine on-chain path over `deal()`/mocks when the test's purpose is to validate that a configuration is correct. Comment any place you deviate.
+- **Mock as little as possible.** When the proposal relies on an interaction that happens outside it (a bridge delivery, a cross-chain message, a prior governance action), reproduce that prerequisite through its real mechanism rather than faking the end state. Fake only the trigger you genuinely cannot reproduce on a fork, and reach everything downstream through the real contracts.
 - **Keep tests independent.** `setUp()` runs fresh before each; never rely on test ordering or shared mutable state.
 - **Self-documenting first, comments second.** Tests double as documentation of what the proposal does on-chain.
