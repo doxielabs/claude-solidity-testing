@@ -232,6 +232,8 @@ function test_executionFailsNoFunds() public {
 }
 ```
 
+Once the selector is known, pin it — and prefer `abi.encodeWithSelector` over `abi.encodeWithSignature`, since the compiler checks the selector but not a signature string.
+
 ### Test naming
 
 Name tests after the **effect**, not a function signature:
@@ -255,7 +257,27 @@ Coverage (vs execute() effects):
 
 Note for **config-engine proposals** (asset listings, cap/rate updates via `AaveV3ConfigEngine`): the engine + the `test_defaultProposalExecution` config-diff snapshot already cover most parameter changes. There, add explicit effect tests only for anything the diff does not capture (e.g. a side transfer, a role change, an off-engine call), and lean on reviewing the generated `diffs/` snapshot for the rest.
 
-## Step 5 — Report back pitfalls
+## Step 5 — Validate the tests
+
+A green proposal test is not necessarily a meaningful one. The dominant failure mode here is a test that asserts a state which was **already true at the fork block** — it passes whether or not the payload does anything. Once the file runs clean, validate each test by breaking it on purpose and confirming it fails.
+
+**Mutate the test, never the payload.** For each test, apply one mutation that is guaranteed to make it fail:
+- **Comment out `executePayload(vm, address(proposal))`.** This is the essential mutation for proposal tests: every effect test must fail without it. A test that still passes is asserting pre-existing on-chain state, not the proposal's effect.
+- Change an expected value in an assertion (`tokenBudgetBefore + amount` → `tokenBudgetBefore`), or point it at a different `proposal.*()` constant.
+- Change an argument in the `emit` line that follows `vm.expectEmit`, or the emitter address.
+
+Note what does **not** work as a mutation: deleting a `vm.expectEmit` makes the test pass silently (the bare `emit` is just a log from the test contract). Always mutate an expectation into a *wrong* expectation rather than removing it.
+
+Apply one mutation per test, then run the file once — every mutated test must fail. The fork is RPC-cached from Step 4, so this is one extra run, not one per test. Exclude `test_defaultProposalExecution` from the mutation pass; it is generated and rewrites the `diffs/` snapshots.
+
+- **Mutated test still passes** → it is not proving the payload did anything. Either the "before" and "after" values coincide at this fork block (assert the pre-condition explicitly and pick a value that actually moves), or the assertion reads state the payload never touches.
+- **Mutated test fails** → the test is live and genuinely depends on execution.
+
+If a mutation reveals the *payload* not performing an effect the spec promises, report the discrepancy explicitly and leave the test asserting the specified behavior — never weaken an assertion to make a mutation "work". If RPCs aren't configured and the suite can't run, say so and skip this step rather than claiming validated tests.
+
+Revert **every** mutation when done, re-run to confirm the file is green, and make sure the committed `diffs/` come from an unmutated run.
+
+## Step 6 — Report back pitfalls
 
 Flag anything that makes the proposal hard to test or maintain:
 - An `execute()` step whose effect isn't observable through any getter (hard to assert — suggest the read path or a missing event).
@@ -264,12 +286,13 @@ Flag anything that makes the proposal hard to test or maintain:
 - Magic numbers in the payload that should be named constants so tests can reference them instead of duplicating literals.
 - A multi-step `execute()` where reordering would change the outcome but no test pins the ordering.
 
-## Step 6 — Self-review against the proposal checklist
+## Step 7 — Self-review against the proposal checklist
 
 Reviewers gate every proposal PR on the checklist below. After writing the tests, actively run the items your changes touch and **explicitly flag** the rest for the author instead of assuming they pass.
 
 Verifiable from the test work:
 
+- [ ] **Every effect test validated by mutation** (Step 5) — each one fails with `executePayload` commented out — and every mutation reverted before the final run.
 - [ ] **Snapshot diff regenerated and aligned.** `test_defaultProposalExecution` rewrites the before/after JSON under `reports/` and the human-readable diff under `diffs/`. Re-run the file (Step 4) and confirm the committed `diffs/` reflect the *current* payload — a stale diff is a common reject. Check the suite has at least the default test plus one test per effect.
 - [ ] **No unused files or imports.** Trim every import the `.t.sol` does not use (e.g. drop `ReserveConfig` or an interface you imported while drafting); `forge build` surfaces some as warnings, check the rest by eye. Run `npm run lint` (prettier, enforced by the pre-commit hook). Leave no scratch files behind.
 - [ ] **Address book over raw addresses.** Grep the test files for raw address literals and replace each with its `aave-address-book` symbol where one exists: `grep -rnE '0x[a-fA-F0-9]{40}' src/<folder>/*.t.sol` (bytes32 values match too — review each hit). The only acceptable raw address is a documented, guarded fork constant (e.g. a CCIP OffRamp) with a comment explaining the pin.
@@ -293,4 +316,5 @@ Verifiable from the test work:
 - **Mirror real sequencing**; prefer the genuine on-chain path over `deal()`/mocks when the test's purpose is to validate that a configuration is correct. Comment any place you deviate.
 - **Mock as little as possible.** When the proposal relies on an interaction that happens outside it (a bridge delivery, a cross-chain message, a prior governance action), reproduce that prerequisite through its real mechanism rather than faking the end state. Fake only the trigger you genuinely cannot reproduce on a fork, and reach everything downstream through the real contracts.
 - **Keep tests independent.** `setUp()` runs fresh before each; never rely on test ordering or shared mutable state.
-- **Self-documenting first, comments second.** Tests double as documentation of what the proposal does on-chain.
+- **Self-documenting first, comments second.** Tests double as documentation of what the proposal does on-chain. Don't over-comment.
+- **Validate every test by mutation.** An effect test that still passes without `executePayload` proves nothing. Revert all mutations before handing off.

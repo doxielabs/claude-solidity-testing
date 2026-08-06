@@ -201,7 +201,31 @@ test/
 │   └── verification.ts      # Verification helper functions
 ```
 
-## Step 4 — Review coverage
+## Step 4 — Run and validate the tests
+
+First get the suite green: `npx hardhat test`. Iterate until every test passes.
+
+A passing test is not necessarily a *meaningful* test — one that asserts nothing, or whose assertion promise was never awaited, passes just as green. Validate each test by breaking it on purpose and confirming it fails.
+
+**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+- Change an expected value in an assertion (`.to.equal(expected)` → a different value).
+- Comment out the call under test, so the state change being asserted never happens.
+- Change the arguments in `.withArgs(...)`, or the error name in `.to.be.revertedWithCustomError(contract, "...")`.
+- Change the amount in `.to.changeTokenBalance(token, owner, amount)`.
+
+Keep each mutation simple and obvious, so a test that survives it is unambiguously not testing what its name claims.
+
+Note what does **not** work as a mutation: dropping `.to.emit(...)` from an `await expect(tx)` chain leaves a passing assertion behind. Always mutate an expectation into a *wrong* expectation rather than removing it.
+
+Apply one mutation per test, then run the suite once — every mutated test must fail. Then:
+- **Mutated test still passes** → it is not exercising the behavior its name claims. The most common cause in Hardhat is a missing `await` on `expect(...)`: an un-awaited chai-as-promised assertion resolves as an ignored rejected promise and never fails. Fix the test.
+- **Mutated test fails** → the test is live.
+
+If a mutation reveals the *contract* misbehaving, report the discrepancy explicitly and leave the test asserting the correct behavior — never weaken an assertion to make a mutation "work".
+
+Revert **every** mutation when done and re-run the suite to confirm it is green again. No mutation may survive into the final test files.
+
+## Step 5 — Review coverage
 
 After writing tests, assess coverage. Print a brief coverage summary at the end **in the same order the tests are written** (reverts → happy path → edge cases → e2e):
 
@@ -226,3 +250,6 @@ Coverage summary:
 - **When forking mainnet**, pin to a specific block number for reproducibility.
 - **Do not use `hardhat_reset` between tests** — use `loadFixture` instead.
 - **Prefer `bigint` literals** (e.g., `100n`) over `ethers.parseEther` for simple values.
+- **Always `await` an `expect(...)` chain** that wraps a transaction — an un-awaited assertion never fails.
+- **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
+- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.

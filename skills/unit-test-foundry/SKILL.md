@@ -210,6 +210,8 @@ vm.expectRevert(ContractName.InsufficientBalance.selector);
 target.withdraw(100);
 ```
 
+Prefer `abi.encodeWithSelector` over `abi.encodeWithSignature`.
+
 **Time manipulation:**
 ```solidity
 vm.warp(block.timestamp + 1 days);    // set timestamp
@@ -321,7 +323,29 @@ function testFuzz_Deposit_AnyValidAmount(uint256 amount) public {}
 
 ```
 
-## Step 4 — Review coverage
+## Step 4 — Run and validate the tests
+
+First get the suite green: `forge test --match-path test/ContractName.t.sol -vvv`. Iterate until every test passes.
+
+A passing test is not necessarily a *meaningful* test — one that asserts nothing, or asserts something that was already true before the call, passes just as green. Validate each test by breaking it on purpose and confirming it fails.
+
+**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+- Change an expected value in an assertion (`balanceBefore - amount` → `balanceBefore + amount`).
+- Comment out the call under test, so the state change being asserted never happens.
+- Change the expected error in `vm.expectRevert` to a different selector or reason string.
+- Change an argument in the `emit` line that follows `vm.expectEmit`.
+
+Keep each mutation simple and obvious, so a test that survives it is unambiguously not testing what its name claims.
+
+Note what does **not** work as a mutation: deleting a `vm.expectEmit` makes the test pass silently (the bare `emit` is just a log from the test contract), and deleting an assertion outright proves nothing. Always mutate an expectation into a *wrong* expectation rather than removing it.
+
+Apply one mutation per test, then run the whole file once — every mutated test must fail. Then:
+- **Mutated test still passes** → it is not exercising the behavior its name claims. Diagnose and fix the test. If instead the contract is not behaving as expected, report the discrepancy explicitly and leave the test asserting the *correct* behavior so it can be iterated on later — never weaken an assertion to make a mutation "work".
+- **Mutated test fails** → the test is live.
+
+Revert **every** mutation when done and re-run the suite to confirm it is green again. No mutation may survive into the final test files.
+
+## Step 5 — Review coverage
 
 After writing tests, assess coverage. Print a brief coverage summary at the end **in the same order the tests are written** (reverts → happy path → edge cases → fuzz):
 
@@ -335,7 +359,7 @@ Coverage summary:
 - Fuzz tests: 8 functions covered
 ```
 
-# Step 5 — Report back common pitfalls in the current codebase related to maintainability
+# Step 6 — Report back common pitfalls in the current codebase related to maintainability
 
 Some patterns to look out for and report back if found:
 - Functions with more than 3 modifiers (complex access control)
@@ -360,3 +384,5 @@ Include any other code smells or maintainability issues you observe during your 
 - **Use `console2.log()`** for debugging, remove before finalizing.
 - **assert over require** use Forge assertions (`assertEq`, `assertTrue`, etc.) instead of require statements in tests for better error reporting. Always include easily traceable error messages.
 - **Prefer `assertEq` over `assertTrue`** for better error messages on failure.
+- **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
+- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.

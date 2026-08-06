@@ -40,6 +40,7 @@ Generates comprehensive Hardhat v3 test suites with structured coverage across u
 - Reads and analyzes the target contract's full interface (functions, modifiers, events, errors, state)
 - Produces a test plan covering deployment, per-function happy/sad paths, access control, boundary cases, and multi-step integration flows
 - Writes TypeScript tests using `loadFixture`, Chai matchers, and `hardhat-network-helpers`
+- Validates each test by mutation — breaks it on purpose to prove it can fail, then reverts the mutation
 - Outputs a coverage summary mapping tests to every require, event, and modifier
 
 **Invoke:**
@@ -67,6 +68,7 @@ Generates comprehensive Forge unit and fuzz test suites for a Solidity contract 
 - Produces a test plan covering deployment, per-function revert cases (access control, input validation), happy paths with state and event assertions, and edge cases (zero, max uint, boundaries)
 - Writes Solidity tests using forge-std's `Test` base, cheatcodes (`vm.prank`, `vm.expectRevert`, `vm.expectEmit`, `vm.warp`, `deal`, etc.), and a shared `BaseTest` for setup reuse
 - Emits a `testFuzz_` variant for every function with numeric or address inputs, using `bound()` to constrain ranges
+- Validates each test by mutation — breaks it on purpose to prove it can fail, then reverts the mutation
 - Outputs a coverage summary mapping tests to every modifier, require/revert, event, and edge case
 
 **Invoke:**
@@ -98,6 +100,7 @@ Generates a handler-driven Forge invariant test suite for one or more Solidity c
 - Generates a `HandlerBase` (actor scaffolding, `useActor` modifier) and a `BaseTest` (deploys tokens, dependencies, approvals) — or reuses existing ones
 - Writes a handler contract with `bound()`-constrained inputs, ghost variables, and per-selector call counters
 - Writes the invariant test contract with every listed invariant plus any implied conservation / monotonicity / solvency properties
+- Validates each invariant by mutation — skews the property or a ghost update to prove the invariant is not vacuous, then reverts the mutation
 - Outputs a coverage summary tying each invariant back to its entry in the invariants file, plus a handler-action exercise count
 
 **Invoke:**
@@ -198,4 +201,4 @@ To add a new skill, create a directory under `skills/` with a `SKILL.md` file. S
 
 ## Acknowledgements
 
-This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This is an opinionated fork that adjust the testing workflow.
+This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This is an opinionated fork that adjusts the testing workflow.

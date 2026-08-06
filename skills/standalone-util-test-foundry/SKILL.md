@@ -261,6 +261,8 @@ vm.expectRevert(abi.encodeWithSelector(ICctpBridgeSteward.InvalidMaxFee.selector
 vm.expectRevert("RootChainManager: EXIT_ALREADY_PROCESSED");                                        // legacy string revert (3rd-party)
 ```
 
+Prefer `abi.encodeWithSelector` over `abi.encodeWithSignature` — the selector is checked by the compiler, a signature string is not.
+
 **Events with `vm.expectEmit`**, emitting the interface's event immediately before the call. Use the full-topic form when asserting the emitter, and leave non-deterministic indexed topics unchecked:
 ```solidity
 vm.expectEmit(true, true, true, true, address(bridge));
@@ -290,7 +292,28 @@ Coverage (vs surface checklist):
 - Fuzz: caller-based access control on bridge()
 ```
 
-## Step 5 — Report back pitfalls
+## Step 5 — Validate the tests
+
+A green fork test is not necessarily a meaningful one — a test that asserts a state which was already true before the call, or whose `vm.mockCall` swallowed the very call it meant to prove, passes just as green. Once the file runs clean, validate each test by breaking it on purpose and confirming it fails.
+
+**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+- Change an expected value in an assertion (`collectorBalanceBefore + AMOUNT` → `collectorBalanceBefore`).
+- Comment out the call under test, so the effect being asserted never happens. This is the sharpest mutation here: it catches assertions that pass on the fork's pre-existing state.
+- Change the expected error in `vm.expectRevert` to a different selector, or the args passed to `abi.encodeWithSelector`.
+- Change an argument in the `emit` line that follows `vm.expectEmit`, or the emitter address.
+
+Note what does **not** work as a mutation: deleting a `vm.expectEmit` makes the test pass silently (the bare `emit` is just a log from the test contract). Always mutate an expectation into a *wrong* expectation rather than removing it.
+
+Apply one mutation per test, then run the file once — every mutated test must fail. The fork is RPC-cached from Step 4, so this is one extra run, not one per test.
+
+- **Mutated test still passes** → it is not exercising the behavior its name claims. Common causes here: the assertion reads state the payload never touched, the "before" and "after" values are equal at the pinned block, or a mock intercepted the real call. Fix the test.
+- **Mutated test fails** → the test is live.
+
+If a mutation reveals the *contract* misbehaving, report it explicitly and leave the test asserting the correct behavior — never weaken an assertion to make a mutation "work". If RPCs aren't configured and the suite can't run, say so and skip this step rather than claiming validated tests.
+
+Revert **every** mutation when done and re-run to confirm the file is green again. No mutation may survive into the final test file.
+
+## Step 6 — Report back pitfalls
 
 Flag anything that makes the contract hard to test or maintain:
 
@@ -300,13 +323,14 @@ Flag anything that makes the contract hard to test or maintain:
 - A fork assumption the suite silently depends on (a live address, a role, a balance present only at the pinned block) that isn't guarded by a test.
 - The **breadth of a permission the contract relies on** — e.g. the Collector `FUNDS_ADMIN` role lets it move *any* Collector token to *any* address, far more than the function under test needs. Note it as a trust assumption when reviewing changes.
 
-## Step 6 — Self-review before handing off
+## Step 7 — Self-review before handing off
 
 - [ ] **One `.t.sol` per `.sol`, mirror path, self-contained.** Base test contract + one contract per function + constructor + rescue. Every external/public function has a happy path, an access-control test, and its validation reverts.
 - [ ] **No unused imports or files.** Trim every import the `.t.sol` does not use; `forge build` surfaces some as warnings, check the rest by eye. Leave no scratch files behind.
 - [ ] **Address book / constants over raw addresses.** `grep -nE '0x[a-fA-F0-9]{40}' tests/<...>.t.sol` — replace each hit with its `aave-address-book` or `Constants` symbol, or justify it with a comment.
 - [ ] **No magic numbers.** Expected values come from `contract.*()` getters or the `Constants` library, not literals copied from the source.
 - [ ] **Reverts pin the exact selector** (and args), and events assert the exact payload with `vm.expectEmit`.
+- [ ] **Every test validated by mutation** (Step 5), and every mutation reverted — the committed file is the unmutated, green one.
 - [ ] **Fork blocks pinned** (except where a test genuinely needs live data, e.g. a fee quote — say why in a comment).
 - [ ] **Lint & spell-check.** Run `forge fmt` (repo style: 2-space tabs, double quotes; see `foundry.toml [fmt]`). Spell-check the comments and assert messages you added — CI runs a cspell pass.
 - [ ] **`aave-helpers` submodule** — if it moved, confirm it points to the intended commit.
@@ -322,4 +346,5 @@ Flag anything that makes the contract hard to test or maintain:
 - **`assertEq` over `assertTrue`, always with a message.** Reverts pin the exact selector and args; events use `vm.expectEmit`.
 - **Rescue always returns to `COLLECTOR`** — test each authorized role plus the unauthorized revert.
 - **Keep tests independent.** `setUp()` runs fresh before each; never rely on ordering or shared mutable state.
-- **Self-documenting first, comments second.** Tests double as documentation of what the contract does on-chain.
+- **Self-documenting first, comments second.** Tests double as documentation of what the contract does on-chain. Don't over-comment.
+- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.

@@ -200,7 +200,7 @@ deal(address(token), currentActor, amount);           // ERC20 balance
 deal(address(token), currentActor, amount, true);     // ERC20 + adjust totalSupply
 ```
 
-**Mocking external calls (pinning oracle / adapter behavior for the entire run):**
+**Mocking external calls (pinning oracle / adapter behavior for the entire run)** — prefer `abi.encodeWithSelector` over `abi.encodeWithSignature`:
 ```solidity
 vm.mockCall(
     address(oracle),
@@ -309,7 +309,29 @@ function _verifyProposalState(
 function invariant_TotalSupplyMatchesBalances() public view {}
 ```
 
-## Step 4 — Review coverage
+## Step 4 — Run and validate the invariants
+
+First get the suite green: `forge test --match-path test/ContractName.invariant.t.sol -vvv`. Iterate until every invariant holds.
+
+A green invariant run proves very little on its own — an invariant that is never challenged, or a handler whose actions all revert, passes trivially. Validate the suite on two axes:
+
+**1. The fuzzer actually reaches the target.** Run with `-vv` and read the `callSummary()` output: every handler action must have a non-zero call count. With `fail_on_revert = false`, a handler action that always reverts (bad bounds, missing approval, wrong actor) is silently skipped and the invariant is never exercised. Fix the handler until every action lands.
+
+**2. Every invariant is live.** Mutate each one and confirm the run fails:
+- Skew the expected relation (`assertEq(a, b)` → `assertEq(a, b + 1)`, `assertGe` → `assertLe`).
+- Corrupt a ghost variable update inside the handler (e.g. `ghost_depositSum += amount` → `ghost_depositSum += amount + 1`), which must break the conservation invariant that reads it.
+- Comment out a handler action's state-changing call, so the ghost variables and the real state drift apart.
+
+Keep each mutation simple and obvious. Apply one mutation per invariant, run once, and check that each mutated invariant reports a failure with a counterexample sequence.
+
+- **Mutated invariant still holds** → it is vacuous: either the property is trivially true, or no handler action can reach the state that would violate it. Widen the handler (new action, wider bounds, more actors) until the mutation breaks it.
+- **Mutated invariant fails** → it is live, and the shrunk call sequence in the output shows what challenges it.
+
+If a mutation exposes that the *contract* violates a real invariant, report it explicitly and leave the invariant asserting the correct property — never relax an invariant to make the run green.
+
+Revert **every** mutation when done and re-run to confirm the suite is green again. No mutation may survive into the final test files.
+
+## Step 5 — Review coverage
 
 After writing tests, assess coverage. Print a brief coverage summary at the end **in the same order the tests are written** (invariants / functions under test):
 
@@ -319,7 +341,7 @@ Coverage summary:
 - Handler actions exercised: M (confirmed via callSummary())
 ```
 
-# Step 5 — Report back common pitfalls in the current codebase related to maintainability
+# Step 6 — Report back common pitfalls in the current codebase related to maintainability
 
 Some patterns to look out for and report back if found:
 - Functions with more than 3 modifiers (complex access control)
@@ -344,3 +366,5 @@ Include any other code smells or maintainability issues you observe during your 
 - **Use `console2.log()`** for debugging, remove before finalizing.
 - **assert over require** use Forge assertions (`assertEq`, `assertTrue`, etc.) instead of require statements in tests for better error reporting. Always include easily traceable error messages.
 - **Prefer `assertEq` over `assertTrue`** for better error messages on failure.
+- **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
+- **Validate every invariant by mutation.** An invariant that cannot be made to fail is vacuous. Revert all mutations before handing off.
