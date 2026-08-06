@@ -210,6 +210,8 @@ vm.expectRevert(ContractName.InsufficientBalance.selector);
 target.withdraw(100);
 ```
 
+Prefer `abi.encodeWithSelector` over `abi.encodeWithSignature`.
+
 **Time manipulation:**
 ```solidity
 vm.warp(block.timestamp + 1 days);    // set timestamp
@@ -321,7 +323,20 @@ function testFuzz_Deposit_AnyValidAmount(uint256 amount) public {}
 
 ```
 
-## Step 4 — Review coverage
+## Step 4 — Validate tests
+
+Ensure that the tests are actually doing what they are meant to do. For each test, perform a mutation that is guaranteed to break the test, and verify that the test fails. For example:
+- Change the assertions in the test to assert a different value or condition.
+- Skip calling a function that is supposed to have an event and let the assertion fail.
+- Skip `expectEvent` or `expectRevert` conditions and let the test fail.
+
+The mutation should be simple and obvious, so that if the test does not fail, it is clear that the test is not actually testing the intended behavior.
+
+Perform all the mutations in a single test run to save time.
+- If a mutation does not break its test, diagnose the problem and adjust the test. If the problem is that the code is not behaving as expected, expose the issue in the code and leave the test as is to iterate on it later.
+- If a mutation breaks the test, revert the mutation and continue with the remaining tests.
+
+## Step 5 — Review coverage
 
 After writing tests, assess coverage. Print a brief coverage summary at the end **in the same order the tests are written** (reverts → happy path → edge cases → fuzz):
 
@@ -335,7 +350,7 @@ Coverage summary:
 - Fuzz tests: 8 functions covered
 ```
 
-# Step 5 — Report back common pitfalls in the current codebase related to maintainability
+# Step 6 — Report back common pitfalls in the current codebase related to maintainability
 
 Some patterns to look out for and report back if found:
 - Functions with more than 3 modifiers (complex access control)
@@ -360,3 +375,4 @@ Include any other code smells or maintainability issues you observe during your 
 - **Use `console2.log()`** for debugging, remove before finalizing.
 - **assert over require** use Forge assertions (`assertEq`, `assertTrue`, etc.) instead of require statements in tests for better error reporting. Always include easily traceable error messages.
 - **Prefer `assertEq` over `assertTrue`** for better error messages on failure.
+- **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.

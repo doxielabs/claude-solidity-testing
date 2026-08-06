@@ -198,4 +198,4 @@ To add a new skill, create a directory under `skills/` with a `SKILL.md` file. S
 
 ## Acknowledgements
 
-This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This is an opinionated fork that adjust the testing workflow.
+This plugin is a fork of [max-taylor/Claude-Solidity-Skills](https://github.com/max-taylor/Claude-Solidity-Skills). The original author, [Max Taylor](https://github.com/max-taylor), designed the skill structure and curated the underlying resources. This is an opinionated fork that adjusts the testing workflow.
