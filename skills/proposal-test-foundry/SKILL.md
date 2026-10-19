@@ -3,6 +3,12 @@ name: proposal-test-foundry
 description: Generate a Foundry/Forge fork-test suite for an Aave governance proposal payload. Produces one `.t.sol` per payload `.sol` that asserts every on-chain effect after the proposal executes, following this repository's proposal-testing conventions.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 argument-hint: <PayloadFile.sol | proposal folder | YYYYMMDD_Title>
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: >-
+            "${CLAUDE_PLUGIN_ROOT}"/scripts/check-mutation-markers.sh '*.sol'
 ---
 
 You are a senior Solidity test engineer specializing in Foundry/Forge fork tests for **Aave governance proposals**. Your job is to produce a **focused, production-grade fork-test suite** that proves a proposal payload performs exactly the on-chain effects its specification describes — nothing more, nothing less.
@@ -252,6 +258,7 @@ Coverage (vs execute() effects):
 - Config/rate-limiter changes: 4/4 asserted before & after
 - Events: 1/1 verified
 - Guards: no-funds revert, CCIP OffRamp registration
+- Mutations: 8/8 effect tests fail without executePayload; payload mutations not requested (recommended: steps 2 and 4 both move USDC)
 - Skipped: <none | listed placeholders still address(0)>
 ```
 
@@ -261,7 +268,26 @@ Note for **config-engine proposals** (asset listings, cap/rate updates via `Aave
 
 A green proposal test is not necessarily a meaningful one. The dominant failure mode here is a test that asserts a state which was **already true at the fork block** — it passes whether or not the payload does anything. Once the file runs clean, validate each test by breaking it on purpose and confirming it fails.
 
-**Mutate the test, never the payload.** For each test, apply one mutation that is guaranteed to make it fail:
+### Mutation workspace
+
+**Never mutate files in the project.** Apply every mutation in a throwaway copy, so a mutation that is not reverted cannot reach the final code. Copy the Foundry root (the directory with `foundry.toml`) to a directory outside the project, and link the dependencies instead of copying them:
+
+```bash
+WS="$(mktemp -d)/ws"
+rsync -a --exclude lib --exclude node_modules --exclude out --exclude cache --exclude .git ./ "$WS/"
+ln -s "$PWD/lib" "$WS/lib"   # also link node_modules if the remappings use it
+(cd "$WS" && forge build)
+```
+
+The copy includes uncommitted files, so it holds the tests you just wrote. Run every mutated test inside `$WS`. Write fixes to the tests in the project, then copy them to `$WS` again before the next round. Delete `$WS` when you are done.
+
+Mark every mutated line with a trailing `// MUTANT-DO-NOT-COMMIT` comment. This skill registers a `Stop` hook that blocks the end of each turn while that marker is in a `.sol` file in the project. If a mutation reaches the project by mistake, you cannot finish until the file is restored.
+
+The fork RPC cache lives outside the project, so the copy reuses it. Runs in `$WS` write their `reports/` and `diffs/` into `$WS`, so a mutated run cannot change the committed snapshots.
+
+### Test mutations
+
+For each test, apply one mutation to the test that is guaranteed to make it fail:
 - **Comment out `executePayload(vm, address(proposal))`.** This is the essential mutation for proposal tests: every effect test must fail without it. A test that still passes is asserting pre-existing on-chain state, not the proposal's effect.
 - Change an expected value in an assertion (`tokenBudgetBefore + amount` → `tokenBudgetBefore`), or point it at a different `proposal.*()` constant.
 - Change an argument in the `emit` line that follows `vm.expectEmit`, or the emitter address.
@@ -275,7 +301,15 @@ Apply one mutation per test, then run the file once — every mutated test must 
 
 If a mutation reveals the *payload* not performing an effect the spec promises, report the discrepancy explicitly and leave the test asserting the specified behavior — never weaken an assertion to make a mutation "work". If RPCs aren't configured and the suite can't run, say so and skip this step rather than claiming validated tests.
 
-Revert **every** mutation when done, re-run to confirm the file is green, and make sure the committed `diffs/` come from an unmutated run.
+Restore the mutated test file in `$WS` from the project before the next round.
+
+### Payload mutations (on request)
+
+Commenting out `executePayload` removes every effect at once. It does not show that each effect has its own test. Payload mutations show that, but each one is another fork run, so run them only when the user asks for them. They are worth it when `execute()` has many steps, or when two steps touch the same balance or config, so one test could pass for the other step's effect. For a payload with one or two independent steps, recommend against them. When they are not requested, say so in the report, with that recommendation.
+
+When the user asks for them, delete one step of `execute()` in `$WS` per run and confirm that the test for that effect fails. Run with `forge test --fail-fast`, and restore the payload in `$WS` between runs. A step whose removal fails no test has no effect test: add it in the project and repeat.
+
+When you are done, run the file in the project so the committed `diffs/` come from an unmutated run, and delete `$WS`.
 
 ## Step 6 — Report back pitfalls
 
@@ -292,7 +326,7 @@ Reviewers gate every proposal PR on the checklist below. After writing the tests
 
 Verifiable from the test work:
 
-- [ ] **Every effect test validated by mutation** (Step 5) — each one fails with `executePayload` commented out — and every mutation reverted before the final run.
+- [ ] **Every effect test validated by mutation** (Step 5) — each one fails with `executePayload` commented out — in a workspace copy, so no mutation touches the project.
 - [ ] **Snapshot diff regenerated and aligned.** `test_defaultProposalExecution` rewrites the before/after JSON under `reports/` and the human-readable diff under `diffs/`. Re-run the file (Step 4) and confirm the committed `diffs/` reflect the *current* payload — a stale diff is a common reject. Check the suite has at least the default test plus one test per effect.
 - [ ] **No unused files or imports.** Trim every import the `.t.sol` does not use (e.g. drop `ReserveConfig` or an interface you imported while drafting); `forge build` surfaces some as warnings, check the rest by eye. Run `npm run lint` (prettier, enforced by the pre-commit hook). Leave no scratch files behind.
 - [ ] **Address book over raw addresses.** Grep the test files for raw address literals and replace each with its `aave-address-book` symbol where one exists: `grep -rnE '0x[a-fA-F0-9]{40}' src/<folder>/*.t.sol` (bytes32 values match too — review each hit). The only acceptable raw address is a documented, guarded fork constant (e.g. a CCIP OffRamp) with a comment explaining the pin.
@@ -317,4 +351,4 @@ Verifiable from the test work:
 - **Mock as little as possible.** When the proposal relies on an interaction that happens outside it (a bridge delivery, a cross-chain message, a prior governance action), reproduce that prerequisite through its real mechanism rather than faking the end state. Fake only the trigger you genuinely cannot reproduce on a fork, and reach everything downstream through the real contracts.
 - **Keep tests independent.** `setUp()` runs fresh before each; never rely on test ordering or shared mutable state.
 - **Self-documenting first, comments second.** Tests double as documentation of what the proposal does on-chain. Don't over-comment.
-- **Validate every test by mutation.** An effect test that still passes without `executePayload` proves nothing. Revert all mutations before handing off.
+- **Validate every test by mutation, in a workspace copy.** An effect test that still passes without `executePayload` proves nothing. Never mutate the project's files. Mutate the payload only on request.

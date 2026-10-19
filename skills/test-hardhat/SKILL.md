@@ -3,6 +3,12 @@ name: test-hardhat
 description: Generate a comprehensive Hardhat test suite for a Solidity contract. Produces structured, high-coverage tests following battle-tested smart contract testing methodology.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
 argument-hint: <ContractName.sol | functionName | ContractName.sol#42>
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: >-
+            "${CLAUDE_PLUGIN_ROOT}"/scripts/check-mutation-markers.sh '*.sol' '*.ts' '*.js'
 ---
 
 You are a senior Solidity test engineer. Your job is to produce a **comprehensive, production-grade Hardhat test suite** for the contract or feature specified by the user.
@@ -207,7 +213,24 @@ First get the suite green: `npx hardhat test`. Iterate until every test passes.
 
 A passing test is not necessarily a *meaningful* test — one that asserts nothing, or whose assertion promise was never awaited, passes just as green. Validate each test by breaking it on purpose and confirming it fails.
 
-**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+### Mutation workspace
+
+**Never mutate files in the project.** Apply every mutation in a throwaway copy, so a mutation that is not reverted cannot reach the final code. Copy the Hardhat root (the directory with `hardhat.config.*`) to a directory outside the project, and link the dependencies instead of copying them:
+
+```bash
+WS="$(mktemp -d)/ws"
+rsync -a --exclude node_modules --exclude artifacts --exclude cache --exclude typechain-types --exclude coverage --exclude .git ./ "$WS/"
+ln -s "$PWD/node_modules" "$WS/node_modules"
+(cd "$WS" && npx hardhat compile)
+```
+
+The copy includes uncommitted files, so it holds the tests you just wrote. Run every mutated test inside `$WS`. Write fixes to the tests in the project, then copy them to `$WS` again before the next round. Delete `$WS` when you are done.
+
+Mark every mutated line with a trailing `// MUTANT-DO-NOT-COMMIT` comment. This skill registers a `Stop` hook that blocks the end of each turn while that marker is in a `.sol`, `.ts` or `.js` file in the project. If a mutation reaches the project by mistake, you cannot finish until the file is restored.
+
+### Test mutations
+
+For each test, apply one mutation to the test that is guaranteed to make it fail:
 - Change an expected value in an assertion (`.to.equal(expected)` → a different value).
 - Comment out the call under test, so the state change being asserted never happens.
 - Change the arguments in `.withArgs(...)`, or the error name in `.to.be.revertedWithCustomError(contract, "...")`.
@@ -223,7 +246,20 @@ Apply one mutation per test, then run the suite once — every mutated test must
 
 If a mutation reveals the *contract* misbehaving, report the discrepancy explicitly and leave the test asserting the correct behavior — never weaken an assertion to make a mutation "work".
 
-Revert **every** mutation when done and re-run the suite to confirm it is green again. No mutation may survive into the final test files.
+Restore the mutated test files in `$WS` from the project before the next round.
+
+### Source mutations (on request)
+
+A test mutation shows that a test checks its expectation. It does not show that the suite notices a bug in the contract. Source mutations are slow: each one rebuilds the contract and reruns the suite. Run them only when the user asks for them. Otherwise, end the report with a recommendation: whether they are worth running for this code, and the 3 to 5 mutants you would try first. They are worth it for exact arithmetic (rounding, conversions, fee splits), for checks whose order matters, and for guards whose revert test could pass for another reason. For simple setters, getters and plain access control, recommend against them.
+
+When the user asks for them, put one bug in the contract in `$WS` for each guard and state change the tests target, and confirm that at least one test fails:
+- Delete a `require` or a custom-error check. Its `revertedWithCustomError` test must fail.
+- Change a rounding direction, or add or drop a unit in an arithmetic expression. The test that checks the exact amount must fail.
+- Delete a storage write or an `emit`. The state or event test must fail.
+
+Apply one source mutation per run with `npx hardhat test --bail`, which stops at the first failing test, and restore the contract in `$WS` between runs. A mutation that no test catches means the behavior is not tested: add the test in the project and repeat. Report equivalent mutants (a change with no effect on behavior) as equivalent.
+
+When you are done, run the suite in the project to confirm it is green, and delete `$WS`.
 
 ## Step 5 — Review coverage
 
@@ -237,6 +273,7 @@ Coverage summary:
 - Events: 8/8 verified
 - Edge cases: zero values, max uint, address(0), reentrancy
 - E2E flows: 3 lifecycle scenarios
+- Mutations: 42/42 test mutations failed; source mutations not requested (recommended for the share conversion: 3 candidates listed)
 ```
 
 ## Rules
@@ -252,4 +289,4 @@ Coverage summary:
 - **Prefer `bigint` literals** (e.g., `100n`) over `ethers.parseEther` for simple values.
 - **Always `await` an `expect(...)` chain** that wraps a transaction — an un-awaited assertion never fails.
 - **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
-- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.
+- **Validate every test by mutation, in a workspace copy.** A test that cannot be made to fail is not a test. Never mutate the project's files. Mutate the source only on request.

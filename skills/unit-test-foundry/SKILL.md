@@ -3,6 +3,12 @@ name: unit-test-foundry
 description: Generate a comprehensive Foundry/Forge unit and fuzz test suite for a Solidity contract. Produces structured, high-coverage tests following battle-tested methodology.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
 argument-hint: <ContractName.sol | functionName | ContractName.sol#42>
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: >-
+            "${CLAUDE_PLUGIN_ROOT}"/scripts/check-mutation-markers.sh '*.sol'
 ---
 
 You are a senior Solidity test engineer specializing in Foundry/Forge. Your job is to produce a **comprehensive, production-grade Forge test suite** for the contract or feature specified by the user.
@@ -329,7 +335,24 @@ First get the suite green: `forge test --match-path test/ContractName.t.sol -vvv
 
 A passing test is not necessarily a *meaningful* test — one that asserts nothing, or asserts something that was already true before the call, passes just as green. Validate each test by breaking it on purpose and confirming it fails.
 
-**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+### Mutation workspace
+
+**Never mutate files in the project.** Apply every mutation in a throwaway copy, so a mutation that is not reverted cannot reach the final code. Copy the Foundry root (the directory with `foundry.toml`) to a directory outside the project, and link the dependencies instead of copying them:
+
+```bash
+WS="$(mktemp -d)/ws"
+rsync -a --exclude lib --exclude node_modules --exclude out --exclude cache --exclude .git ./ "$WS/"
+ln -s "$PWD/lib" "$WS/lib"   # also link node_modules if the remappings use it
+(cd "$WS" && forge build)
+```
+
+The copy includes uncommitted files, so it holds the tests you just wrote. Run every mutated `forge test` inside `$WS`. Write fixes to the tests in the project, then copy them to `$WS` again before the next round. Delete `$WS` when you are done.
+
+Mark every mutated line with a trailing `// MUTANT-DO-NOT-COMMIT` comment. This skill registers a `Stop` hook that blocks the end of each turn while that marker is in a `.sol` file in the project. If a mutation reaches the project by mistake, you cannot finish until the file is restored.
+
+### Test mutations: every test is live
+
+For each test, apply one mutation to the test that is guaranteed to make it fail:
 - Change an expected value in an assertion (`balanceBefore - amount` → `balanceBefore + amount`).
 - Comment out the call under test, so the state change being asserted never happens.
 - Change the expected error in `vm.expectRevert` to a different selector or reason string.
@@ -343,7 +366,32 @@ Apply one mutation per test, then run the whole file once — every mutated test
 - **Mutated test still passes** → it is not exercising the behavior its name claims. Diagnose and fix the test. If instead the contract is not behaving as expected, report the discrepancy explicitly and leave the test asserting the *correct* behavior so it can be iterated on later — never weaken an assertion to make a mutation "work".
 - **Mutated test fails** → the test is live.
 
-Revert **every** mutation when done and re-run the suite to confirm it is green again. No mutation may survive into the final test files.
+Restore the mutated test files in `$WS` from the project before the next round.
+
+### Source mutations: the tests catch real bugs (on request)
+
+A test mutation shows that a test checks its expectation. It does not show that the suite notices a bug in the contract. Source mutations are slow: each one rebuilds the contract and reruns the suite. Run them only when the user asks for them. Otherwise, end the report with a recommendation: whether they are worth running for this code, and the 3 to 5 mutants you would try first.
+
+For unit tests, test mutations are usually enough, because each test pins one revert or one value. Source mutations are worth their cost when:
+- The code does exact arithmetic, such as rounding, share and asset conversion, or fee splits. A test can check a value that is correct only by chance.
+- The order of checks or state writes matters for safety.
+- A guard protects funds or access, and its revert test could pass for another reason, for example because an earlier check reverts with the same error.
+
+For simple setters, getters and plain access control, recommend against them. Invariant suites gain more from source mutations than unit suites do.
+
+When the user asks for them, put one bug in the contract in `$WS` for each guard and state change the tests target, and confirm that at least one test fails:
+- Delete a `require` or a custom-error check. Its revert test must fail.
+- Swap two checks whose order is part of the behavior. The test that pins the order must fail.
+- Change a rounding direction, or add or drop a unit in an arithmetic expression. The test that checks the exact amount must fail.
+- Delete a storage write or an `emit`. The state or event test must fail.
+
+Apply one source mutation per run, because two bugs can mask each other. Run it with `forge test --fail-fast`: one failing test is enough to show the mutant is caught, and the run stops there. Restore the contract in `$WS` from the project between runs. Then:
+- **No test fails** → the behavior is not tested. Add or fix the test in the project, and repeat the mutation.
+- **A test fails** → name the first failing test in the report.
+
+Some mutants are equivalent: they change the code but not the behavior, for example a check that an earlier call already guarantees. Report them as equivalent instead of writing a test for them.
+
+When you are done, run the suite in the project to confirm it is green, and delete `$WS`.
 
 ## Step 5 — Review coverage
 
@@ -357,6 +405,7 @@ Coverage summary:
 - Events: 8/8 verified
 - Edge cases: zero values, max uint, address(0), reentrancy
 - Fuzz tests: 8 functions covered
+- Mutations: 42/42 test mutations failed; source mutations not requested (recommended for the share conversion: 3 candidates listed)
 ```
 
 # Step 6 — Report back common pitfalls in the current codebase related to maintainability
@@ -385,4 +434,4 @@ Include any other code smells or maintainability issues you observe during your 
 - **assert over require** use Forge assertions (`assertEq`, `assertTrue`, etc.) instead of require statements in tests for better error reporting. Always include easily traceable error messages.
 - **Prefer `assertEq` over `assertTrue`** for better error messages on failure.
 - **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
-- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.
+- **Validate every test by mutation, in a workspace copy.** A test that cannot be made to fail is not a test. Never mutate the project's files. Mutate the source only on request.

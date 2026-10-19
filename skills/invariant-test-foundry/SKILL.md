@@ -3,6 +3,12 @@ name: invariant-test-foundry
 description: Generate a comprehensive Foundry/Forge invariant test suite for one or more Solidity contracts, driven by a user-supplied invariants file.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Task
 argument-hint: <[Contract1.sol, Contract2.sol, ...]> <invariants-file.md>
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: >-
+            "${CLAUDE_PLUGIN_ROOT}"/scripts/check-mutation-markers.sh '*.sol'
 ---
 
 You are a senior Solidity test engineer specializing in Foundry/Forge. Your job is to produce a **comprehensive, production-grade Forge invariant test suite** for the contracts specified by the user.
@@ -317,19 +323,53 @@ A green invariant run proves very little on its own — an invariant that is nev
 
 **1. The fuzzer actually reaches the target.** Run with `-vv` and read the `callSummary()` output: every handler action must have a non-zero call count. With `fail_on_revert = false`, a handler action that always reverts (bad bounds, missing approval, wrong actor) is silently skipped and the invariant is never exercised. Fix the handler until every action lands.
 
-**2. Every invariant is live.** Mutate each one and confirm the run fails:
+### Mutation workspace
+
+**Never mutate files in the project.** Apply every mutation in a throwaway copy, so a mutation that is not reverted cannot reach the final code. Copy the Foundry root (the directory with `foundry.toml`) to a directory outside the project, and link the dependencies instead of copying them:
+
+```bash
+WS="$(mktemp -d)/ws"
+rsync -a --exclude lib --exclude node_modules --exclude out --exclude cache --exclude .git ./ "$WS/"
+ln -s "$PWD/lib" "$WS/lib"   # also link node_modules if the remappings use it
+(cd "$WS" && forge build)
+```
+
+The copy includes uncommitted files, so it holds the tests you just wrote. Run every mutated test inside `$WS`. Write fixes to the tests in the project, then copy them to `$WS` again before the next round. Delete `$WS` when you are done.
+
+Mark every mutated line with a trailing `// MUTANT-DO-NOT-COMMIT` comment. This skill registers a `Stop` hook that blocks the end of each turn while that marker is in a `.sol` file in the project. If a mutation reaches the project by mistake, you cannot finish until the file is restored.
+
+**2. Every invariant is live.** Mutate each one in `$WS` and confirm the run fails:
 - Skew the expected relation (`assertEq(a, b)` → `assertEq(a, b + 1)`, `assertGe` → `assertLe`).
 - Corrupt a ghost variable update inside the handler (e.g. `ghost_depositSum += amount` → `ghost_depositSum += amount + 1`), which must break the conservation invariant that reads it.
 - Comment out a handler action's state-changing call, so the ghost variables and the real state drift apart.
 
 Keep each mutation simple and obvious. Apply one mutation per invariant, run once, and check that each mutated invariant reports a failure with a counterexample sequence.
 
+A failure with `failed to set up invariant testing environment` happened on the initial state, before any handler call. It proves only that the assertion runs. Prefer a mutation that holds at setup and breaks only after handler actions, such as a corrupted ghost update, or use a source mutation (3).
+
 - **Mutated invariant still holds** → it is vacuous: either the property is trivially true, or no handler action can reach the state that would violate it. Widen the handler (new action, wider bounds, more actors) until the mutation breaks it.
 - **Mutated invariant fails** → it is live, and the shrunk call sequence in the output shows what challenges it.
 
 If a mutation exposes that the *contract* violates a real invariant, report it explicitly and leave the invariant asserting the correct property — never relax an invariant to make the run green.
 
-Revert **every** mutation when done and re-run to confirm the suite is green again. No mutation may survive into the final test files.
+Restore the mutated files in `$WS` from the project before the next round.
+
+**3. The invariants catch real bugs (on request).** A test-side mutation cannot show that an invariant notices a bug in the contract. Source mutations are slow: each one rebuilds the contract and reruns the fuzz campaign. Run them only when the user asks for them. Otherwise, end the report with a recommendation: whether they are worth running for this code, and the one or two per invariant mutants you would try first.
+
+For invariants, this step carries most of the validation value, because a test-side mutation often fails on the initial state and proves only that the assertion runs. Recommend it for new or changed invariants on solvency, conservation, or a guard that keeps a state machine safe. For a simple bound, such as a value that never exceeds a constant, step 2 is usually enough.
+
+When the user asks for it, put one bug in the contract in `$WS` for each invariant, one that the invariant exists to catch, and confirm that the run fails on that invariant:
+- Delete a guard that keeps the property true, for example a `require` on the state a transition needs.
+- Change a rounding direction, or add one unit to a credit or a transfer, so a conservation or solvency relation breaks.
+- Delete a storage write, so an accounting variable drifts from the balances it tracks.
+
+Apply one source mutation per run, because two bugs can mask each other. Run it with `forge test --fail-fast --match-path <invariant test file>`: the run stops at the first failing invariant. To check that the target invariant catches the bug, and not only some invariant, also pass `--match-test <invariant name>`, which fuzzes that invariant alone. Restore the contract in `$WS` from the project between runs.
+
+Check which invariant caught the bug. With `assertions_revert = false`, a failed handler assertion sets one global failure flag, so every invariant fails together and the output does not show which property caught the bug. To see that, set `assertions_revert = true` in `$WS` only. A handler assertion then reverts its own action instead. If that assertion guards the mutated behavior, the revert rolls the action back and hides the bug from the invariant, so also delete that assertion in `$WS`.
+- **No invariant fails** → the property is not checked against that bug. Widen the handler or strengthen the invariant in the project, and repeat the mutation.
+- **The target invariant fails** → name it in the report, with the failure message.
+
+When you are done, run the suite in the project to confirm it is green, and delete `$WS`.
 
 ## Step 5 — Review coverage
 
@@ -339,6 +379,7 @@ After writing tests, assess coverage. Print a brief coverage summary at the end 
 Coverage summary:
 - Invariants: N properties checked (one line per invariant, tied back to the entry in the invariants file)
 - Handler actions exercised: M (confirmed via callSummary())
+- Mutations: N/N invariants fail on a test-side mutation; source mutations: K/K caught by their target invariant, or not requested (recommendation and candidates listed)
 ```
 
 # Step 6 — Report back common pitfalls in the current codebase related to maintainability
@@ -367,4 +408,4 @@ Include any other code smells or maintainability issues you observe during your 
 - **assert over require** use Forge assertions (`assertEq`, `assertTrue`, etc.) instead of require statements in tests for better error reporting. Always include easily traceable error messages.
 - **Prefer `assertEq` over `assertTrue`** for better error messages on failure.
 - **Do not over-comment** — tests should be simple and self-documenting. Use comments only when necessary to clarify complex logic or intent.
-- **Validate every invariant by mutation.** An invariant that cannot be made to fail is vacuous. Revert all mutations before handing off.
+- **Validate every invariant by mutation, in a workspace copy.** An invariant that cannot be made to fail is vacuous. Never mutate the project's files. Mutate the source only on request, but recommend it for solvency and conservation invariants.
