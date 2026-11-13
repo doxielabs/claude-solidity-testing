@@ -333,6 +333,13 @@ function testFuzz_Deposit_AnyValidAmount(uint256 amount) public {}
 
 First get the suite green: `forge test --match-path test/ContractName.t.sol -vvv`. Iterate until every test passes.
 
+### Polish before you mutate
+
+When you add tests to an existing suite, compare the new code with the code around it, then rerun the suite. Do this before the mutation step, so the mutations check the final tests.
+
+- **Reuse new helpers.** If you added a helper (a call wrapper, a key builder, a setup step), search the suite for code that does the same thing inline and switch it to the helper. Start with the tests you added or changed, so the file does not end up with two styles for the same call. Keep a test inline when it needs arguments the helper does not take, for example a zero address in a validation test. If tests that you did not touch could also use the helper, list them in the report instead of rewriting them.
+- **Reuse existing helpers.** Before you add a helper, look for one that already does the job in the base contract and in sibling test files. If a sibling file has an equivalent helper in another test base, give yours the same name.
+
 A passing test is not necessarily a *meaningful* test — one that asserts nothing, or asserts something that was already true before the call, passes just as green. Validate each test by breaking it on purpose and confirming it fails.
 
 ### Mutation workspace

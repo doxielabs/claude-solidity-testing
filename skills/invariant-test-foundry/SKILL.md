@@ -319,6 +319,13 @@ function invariant_TotalSupplyMatchesBalances() public view {}
 
 First get the suite green: `forge test --match-path test/ContractName.invariant.t.sol -vvv`. Iterate until every invariant holds.
 
+### Polish before you validate
+
+When you add to an existing suite, compare the new code with the code around it, then rerun the suite. Do this before the validation below, so it checks the final suite.
+
+- **Reuse new helpers.** If you added a helper (a handler call wrapper, a ghost-variable update, an actor setup step), search the suite for code that does the same thing inline and switch it to the helper. Start with the handlers and invariants you added or changed, so the suite does not end up with two styles for the same call. Keep code inline when it needs arguments the helper does not take. If code that you did not touch could also use the helper, list it in the report instead of rewriting it.
+- **Reuse existing helpers.** Before you add a helper, look for one that already does the job in `HandlerBase`, `BaseTest` and sibling test files. If a sibling file has an equivalent helper in another base, give yours the same name.
+
 A green invariant run proves very little on its own — an invariant that is never challenged, or a handler whose actions all revert, passes trivially. Validate the suite on two axes:
 
 **1. The fuzzer actually reaches the target.** Run with `-vv` and read the `callSummary()` output: every handler action must have a non-zero call count. With `fail_on_revert = false`, a handler action that always reverts (bad bounds, missing approval, wrong actor) is silently skipped and the invariant is never exercised. Fix the handler until every action lands.

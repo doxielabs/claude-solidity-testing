@@ -40,6 +40,7 @@ Generates comprehensive Hardhat v3 test suites with structured coverage across u
 - Reads and analyzes the target contract's full interface (functions, modifiers, events, errors, state)
 - Produces a test plan covering deployment, per-function happy/sad paths, access control, boundary cases, and multi-step integration flows
 - Writes TypeScript tests using `loadFixture`, Chai matchers, and `hardhat-network-helpers`
+- Polishes the suite before validation: switches the tests it touched to any new helper, and reuses existing helpers and their names
 - Validates each test by mutation — breaks each test on purpose to prove it can fail, and on request puts bugs in the contract to prove the suite catches them — in a throwaway copy of the project, and a `Stop` hook blocks the turn from ending if a mutation marker reaches the project's files
 - Outputs a coverage summary mapping tests to every require, event, and modifier
 
@@ -68,6 +69,7 @@ Generates comprehensive Forge unit and fuzz test suites for a Solidity contract 
 - Produces a test plan covering deployment, per-function revert cases (access control, input validation), happy paths with state and event assertions, and edge cases (zero, max uint, boundaries)
 - Writes Solidity tests using forge-std's `Test` base, cheatcodes (`vm.prank`, `vm.expectRevert`, `vm.expectEmit`, `vm.warp`, `deal`, etc.), and a shared `BaseTest` for setup reuse
 - Emits a `testFuzz_` variant for every function with numeric or address inputs, using `bound()` to constrain ranges
+- Polishes the suite before validation: switches the tests it touched to any new helper, and reuses existing helpers and their names
 - Validates each test by mutation — breaks each test on purpose to prove it can fail, and on request puts bugs in the contract to prove the suite catches them — in a throwaway copy of the project, and a `Stop` hook blocks the turn from ending if a mutation marker reaches the project's files
 - Outputs a coverage summary mapping tests to every modifier, require/revert, event, and edge case
 
@@ -100,6 +102,7 @@ Generates a handler-driven Forge invariant test suite for one or more Solidity c
 - Generates a `HandlerBase` (actor scaffolding, `useActor` modifier) and a `BaseTest` (deploys tokens, dependencies, approvals) — or reuses existing ones
 - Writes a handler contract with `bound()`-constrained inputs, ghost variables, and per-selector call counters
 - Writes the invariant test contract with every listed invariant plus any implied conservation / monotonicity / solvency properties
+- Polishes the suite before validation: switches the handlers and invariants it touched to any new helper, and reuses existing helpers and their names
 - Validates each invariant by mutation — skews the property or a ghost update, and on request puts a bug in the contract, to prove the invariant is not vacuous — in a throwaway copy of the project, and a `Stop` hook blocks the turn from ending if a mutation marker reaches the project's files
 - Outputs a coverage summary tying each invariant back to its entry in the invariants file, plus a handler-action exercise count
 

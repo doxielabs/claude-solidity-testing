@@ -287,7 +287,10 @@ Name tests after the case, not the function signature: `test_successful_ownerCal
 
 1. **Compile** (always works offline): `forge build` (or `make build` for `--sizes`).
 2. **Run the file** (needs the chain's RPC in `.env`: `RPC_MAINNET`, `RPC_ARBITRUM`, `RPC_POLYGON`, …): `forge test --match-path tests/<mirror-path>/<Contract>.t.sol -vvv`, or `make test-contract filter=<ContractName>`. Iterate until green. If RPCs aren't configured, say so and stop after a clean compile — don't fabricate a passing run.
-3. Print a coverage summary in surface-checklist order:
+3. **Polish before you validate.** When you add tests to an existing file, compare the new code with the code around it, then rerun the file. Do this before Step 5, so the mutations check the final tests.
+   - **Reuse new helpers.** If you added a helper (a setup step on the base, a call wrapper, a reused test body), search the file for code that does the same thing inline and switch it to the helper. Start with the tests you added or changed, so the file does not end up with two styles for the same call. Keep a test inline when it needs arguments the helper does not take, for example a zero address in a constructor revert test. If tests that you did not touch could also use the helper, list them in the report instead of rewriting them.
+   - **Reuse existing helpers.** Before you add a helper, look for one that already does the job in the base contract and in sibling test files. If a sibling file has an equivalent helper in another base, give yours the same name.
+4. Print a coverage summary in surface-checklist order:
 
 ```
 Coverage (vs surface checklist):
