@@ -3,6 +3,12 @@ name: standalone-util-test-foundry
 description: Generate a self-contained Foundry/Forge test suite for a standalone utility contract — one with a single well-defined job that plugs into live protocol contracts (bridges, swappers, maintenance/risk helpers, and similar stewards). Produces one `.t.sol` per `.sol` covering the constructor, every external function, its access control, and its live-contract integrations, following this repository's conventions.
 allowed-tools: Read, Grep, Glob, Write, Edit, Bash
 argument-hint: <Contract.sol | src path | ContractName>
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: >-
+            "${CLAUDE_PLUGIN_ROOT}"/scripts/check-mutation-markers.sh '*.sol'
 ---
 
 You are a senior Solidity test engineer specializing in Foundry/Forge tests for **standalone utility contracts** — small contracts that do one well-defined thing (bridging, swapping, bad-debt cleanup) by plugging into contracts that are already live in production (the Aave `Collector`, third-party bridges, DEXes). Their scope is narrow enough that the whole test suite fits in a single, self-contained `.t.sol`. Your job is to produce that file: a focused, production-grade suite proving the contract does exactly what its interface and README describe — every function, every guard, every integration seam — nothing more, nothing less.
@@ -281,7 +287,10 @@ Name tests after the case, not the function signature: `test_successful_ownerCal
 
 1. **Compile** (always works offline): `forge build` (or `make build` for `--sizes`).
 2. **Run the file** (needs the chain's RPC in `.env`: `RPC_MAINNET`, `RPC_ARBITRUM`, `RPC_POLYGON`, …): `forge test --match-path tests/<mirror-path>/<Contract>.t.sol -vvv`, or `make test-contract filter=<ContractName>`. Iterate until green. If RPCs aren't configured, say so and stop after a clean compile — don't fabricate a passing run.
-3. Print a coverage summary in surface-checklist order:
+3. **Polish before you validate.** When you add tests to an existing file, compare the new code with the code around it, then rerun the file. Do this before Step 5, so the mutations check the final tests.
+   - **Reuse new helpers.** If you added a helper (a setup step on the base, a call wrapper, a reused test body), search the file for code that does the same thing inline and switch it to the helper. Start with the tests you added or changed, so the file does not end up with two styles for the same call. Keep a test inline when it needs arguments the helper does not take, for example a zero address in a constructor revert test. If tests that you did not touch could also use the helper, list them in the report instead of rewriting them.
+   - **Reuse existing helpers.** Before you add a helper, look for one that already does the job in the base contract and in sibling test files. If a sibling file has an equivalent helper in another base, give yours the same name.
+4. Print a coverage summary in surface-checklist order:
 
 ```
 Coverage (vs surface checklist):
@@ -290,13 +299,33 @@ Coverage (vs surface checklist):
 - rescueToken/rescueEth/maxRescue: owner + guardian + non-target + unauth, all sweep to COLLECTOR
 - Fork: real depositForBurn on Arbitrum; mocks: none
 - Fuzz: caller-based access control on bridge()
+- Mutations: 24/24 test mutations failed; source mutations not requested (not recommended: no arithmetic)
 ```
 
 ## Step 5 — Validate the tests
 
 A green fork test is not necessarily a meaningful one — a test that asserts a state which was already true before the call, or whose `vm.mockCall` swallowed the very call it meant to prove, passes just as green. Once the file runs clean, validate each test by breaking it on purpose and confirming it fails.
 
-**Mutate the test, never the contract under test.** For each test, apply one mutation that is guaranteed to make it fail:
+### Mutation workspace
+
+**Never mutate files in the project.** Apply every mutation in a throwaway copy, so a mutation that is not reverted cannot reach the final code. Copy the Foundry root (the directory with `foundry.toml`) to a directory outside the project, and link the dependencies instead of copying them:
+
+```bash
+WS="$(mktemp -d)/ws"
+rsync -a --exclude lib --exclude node_modules --exclude out --exclude cache --exclude .git ./ "$WS/"
+ln -s "$PWD/lib" "$WS/lib"   # also link node_modules if the remappings use it
+(cd "$WS" && forge build)
+```
+
+The copy includes uncommitted files, so it holds the tests you just wrote. Run every mutated test inside `$WS`. Write fixes to the tests in the project, then copy them to `$WS` again before the next round. Delete `$WS` when you are done.
+
+Mark every mutated line with a trailing `// MUTANT-DO-NOT-COMMIT` comment. This skill registers a `Stop` hook that blocks the end of each turn while that marker is in a `.sol` file in the project. If a mutation reaches the project by mistake, you cannot finish until the file is restored.
+
+The fork RPC cache lives outside the project, so the copy reuses it.
+
+### Test mutations
+
+For each test, apply one mutation to the test that is guaranteed to make it fail:
 - Change an expected value in an assertion (`collectorBalanceBefore + AMOUNT` → `collectorBalanceBefore`).
 - Comment out the call under test, so the effect being asserted never happens. This is the sharpest mutation here: it catches assertions that pass on the fork's pre-existing state.
 - Change the expected error in `vm.expectRevert` to a different selector, or the args passed to `abi.encodeWithSelector`.
@@ -311,7 +340,15 @@ Apply one mutation per test, then run the file once — every mutated test must 
 
 If a mutation reveals the *contract* misbehaving, report it explicitly and leave the test asserting the correct behavior — never weaken an assertion to make a mutation "work". If RPCs aren't configured and the suite can't run, say so and skip this step rather than claiming validated tests.
 
-Revert **every** mutation when done and re-run to confirm the file is green again. No mutation may survive into the final test file.
+Restore the mutated test file in `$WS` from the project before the next round.
+
+### Source mutations (on request)
+
+A test mutation shows that a test checks its expectation. It does not show that the suite notices a bug in the contract. Source mutations are slow: each one rebuilds the contract and reruns the fork suite. Run them only when the user asks for them. Otherwise, end the report with a recommendation: whether they are worth running for this code, and the 3 to 5 mutants you would try first. They are worth it when the utility computes amounts it moves (a fee, a quote, a split), or when a test could pass on the fork's existing state. For a utility that only forwards a call behind an access check, recommend against them.
+
+When the user asks for them, delete one access check, one validation `require`, one external call, or one `emit` from the contract in `$WS`, and confirm that the test for it fails. Apply one source mutation per run with `forge test --fail-fast`, and restore the contract in `$WS` between runs. A mutation that no test catches means the behavior is not tested: add the test in the project and repeat.
+
+When you are done, run the file in the project to confirm it is green, and delete `$WS`.
 
 ## Step 6 — Report back pitfalls
 
@@ -330,7 +367,7 @@ Flag anything that makes the contract hard to test or maintain:
 - [ ] **Address book / constants over raw addresses.** `grep -nE '0x[a-fA-F0-9]{40}' tests/<...>.t.sol` — replace each hit with its `aave-address-book` or `Constants` symbol, or justify it with a comment.
 - [ ] **No magic numbers.** Expected values come from `contract.*()` getters or the `Constants` library, not literals copied from the source.
 - [ ] **Reverts pin the exact selector** (and args), and events assert the exact payload with `vm.expectEmit`.
-- [ ] **Every test validated by mutation** (Step 5), and every mutation reverted — the committed file is the unmutated, green one.
+- [ ] **Every test validated by mutation** (Step 5), in a workspace copy — no `MUTANT-DO-NOT-COMMIT` marker in the project, and the committed file is the green one.
 - [ ] **Fork blocks pinned** (except where a test genuinely needs live data, e.g. a fee quote — say why in a comment).
 - [ ] **Lint & spell-check.** Run `forge fmt` (repo style: 2-space tabs, double quotes; see `foundry.toml [fmt]`). Spell-check the comments and assert messages you added — CI runs a cspell pass.
 - [ ] **`aave-helpers` submodule** — if it moved, confirm it points to the intended commit.
@@ -347,4 +384,4 @@ Flag anything that makes the contract hard to test or maintain:
 - **Rescue always returns to `COLLECTOR`** — test each authorized role plus the unauthorized revert.
 - **Keep tests independent.** `setUp()` runs fresh before each; never rely on ordering or shared mutable state.
 - **Self-documenting first, comments second.** Tests double as documentation of what the contract does on-chain. Don't over-comment.
-- **Validate every test by mutation.** A test that cannot be made to fail is not a test. Revert all mutations before handing off.
+- **Validate every test by mutation, in a workspace copy.** A test that cannot be made to fail is not a test. Never mutate the project's files. Mutate the source only on request.
